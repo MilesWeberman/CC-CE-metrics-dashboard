@@ -313,7 +313,7 @@ if uploaded_file is not None:
                             fig = px.histogram(
                                 delta_data_all,
                                 nbins=int(delta_data_all.max() - delta_data_all.min() + 1),  # 1-day buckets
-                                title="Distribution of Delta Data Received to Prod (All Time)",
+                                title="Distribution of Delta Data Received to Prod (All Time) - Click on a bar to see datapoints",
                                 labels={'value': 'Delta Data Received to Prod (Days)', 'count': 'Frequency'},
                                 color_discrete_sequence=['#1f77b4']
                             )
@@ -334,6 +334,7 @@ if uploaded_file is not None:
                                 xaxis=dict(range=[0, 75])  # Fixed x-axis range
                             )
                             
+                            # Display the chart
                             st.plotly_chart(fig, use_container_width=True)
                             
                             # Calculate percentage under threshold
@@ -357,6 +358,36 @@ if uploaded_file is not None:
                                     f"{percentage_under:.1f}%",
                                     help=f"{under_threshold} out of {len(delta_data_all)} ingestions"
                                 )
+                            
+                            # Add bin selection for detailed view
+                            st.write("**🔍 Select a bin to see detailed datapoints:**")
+                            
+                            # Create bins for selection (5-day intervals)
+                            min_val = int(delta_data_all.min())
+                            max_val = int(delta_data_all.max())
+                            bin_options = [f"{i}-{i+5} days" for i in range(min_val, max_val + 1, 5)]
+                            
+                            selected_bin = st.selectbox(
+                                "Choose a bin to explore:",
+                                options=bin_options,
+                                help="Select a 5-day bin to see all datapoints within that range"
+                            )
+                            
+                            if selected_bin:
+                                # Parse the selected bin
+                                bin_start = int(selected_bin.split('-')[0])
+                                
+                                # Filter data for the selected bin (5-day range)
+                                bin_data = df[
+                                    (df['Delta data received to prod'] >= bin_start) & 
+                                    (df['Delta data received to prod'] < bin_start + 5)
+                                ][['Customer_Name', 'Task name','Delta data received to prod', 'Created_Date', 'Estimated days', 'FTE Days']]
+                                
+                                if len(bin_data) > 0:
+                                    st.subheader(f"📋 Datapoints in {selected_bin} range")
+                                    st.dataframe(bin_data, use_container_width=True, hide_index=True)
+                                else:
+                                    st.info(f"No datapoints found in the {selected_bin} range.")
                         
                         else:
                             # Rolling window distribution
@@ -411,7 +442,7 @@ if uploaded_file is not None:
                                     fig = px.histogram(
                                         rolling_data,
                                         nbins=75,  # 1-day buckets for 0-75 days
-                                        title=f"Distribution of Delta Data Received to Prod ({weeks}-Week Window)",
+                                        title=f"Distribution of Delta Data Received to Prod ({weeks}-Week Window) - Select a bin to see datapoints",
                                         labels={'value': 'Delta Data Received to Prod (Days)', 'count': 'Frequency'},
                                         color_discrete_sequence=['#ff7f0e']
                                     )
@@ -456,6 +487,40 @@ if uploaded_file is not None:
                                             help=f"{under_threshold_rolling} out of {len(rolling_data)} ingestions"
                                         )
                                     
+                                    # Add bin selection for detailed view
+                                    st.write("**🔍 Select a bin to see detailed datapoints:**")
+                                    
+                                    # Create bins for selection based on rolling data (5-day intervals)
+                                    if len(rolling_data) > 0:
+                                        min_val_rolling = int(rolling_data.min())
+                                        max_val_rolling = int(rolling_data.max())
+                                        bin_options_rolling = [f"{i}-{i+5} days" for i in range(min_val_rolling, max_val_rolling + 1, 5)]
+                                        
+                                        selected_bin_rolling = st.selectbox(
+                                            "Choose a bin to explore:",
+                                            options=bin_options_rolling,
+                                            help="Select a 5-day bin to see all datapoints within that range for the selected time window",
+                                            key="rolling_bin_selector"
+                                        )
+                                        
+                                        if selected_bin_rolling:
+                                            # Parse the selected bin
+                                            bin_start_rolling = int(selected_bin_rolling.split('-')[0])
+                                            
+                                            # Filter data for the selected bin within the rolling window (5-day range)
+                                            bin_data_rolling = df[
+                                                (df['Created_Date'] >= window_start_date) & 
+                                                (df['Created_Date'] <= window_end_date) &
+                                                (df['Delta data received to prod'] >= bin_start_rolling) & 
+                                                (df['Delta data received to prod'] < bin_start_rolling + 5)
+                                            ][['Customer_Name', 'Delta data received to prod', 'Created_Date', 'Estimated days', 'FTE Days']]
+                                            
+                                            if len(bin_data_rolling) > 0:
+                                                st.subheader(f"📋 Datapoints in {selected_bin_rolling} range ({weeks}-week window)")
+                                                st.dataframe(bin_data_rolling, use_container_width=True, hide_index=True)
+                                            else:
+                                                st.info(f"No datapoints found in the {selected_bin_rolling} range for the selected time window.")
+                                    
                                     # Date range info
                                     st.info(f"📅 Data range: {window_start_date.strftime('%Y-%m-%d')} to {window_end_date.strftime('%Y-%m-%d')}")
                                 
@@ -490,6 +555,22 @@ if uploaded_file is not None:
                                 
                                 else:
                                     st.warning("⚠️ No weekly data available for evolution analysis.")
+                    
+                    # Customer average table
+                    st.subheader("📊 Average Delta Data by Customer")
+                    
+                    # Calculate average delta per customer
+                    customer_avg = df.groupby('Customer_Name')['Delta data received to prod'].agg(['mean', 'count']).reset_index()
+                    customer_avg = customer_avg.rename(columns={'mean': 'Average Delta (Days)', 'count': 'Number of Ingestions'})
+                    customer_avg = customer_avg.sort_values('Average Delta (Days)', ascending=True)
+                    customer_avg['Average Delta (Days)'] = customer_avg['Average Delta (Days)'].round(2)
+                    
+                    # Display the table
+                    st.dataframe(
+                        customer_avg,
+                        use_container_width=True,
+                        hide_index=True
+                    )
     
     except Exception as e:
         st.error(f"❌ Error reading the CSV file: {str(e)}")
